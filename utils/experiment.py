@@ -55,8 +55,8 @@ def create_experiment(process_run, params):
     if not os.path.isdir(exper_path):
         os.makedirs(exper_path)
 
-    if filelog:			# all stdout print to file?
-        sys.stdout = open(exper_path + '/' + exper_tag + '-print.txt', 'w')	
+    # if filelog:			# all stdout print to file?     >>>>>>>>>>>> ignore filelog for Colab WandB version
+    #     sys.stdout = open(exper_path + '/' + exper_tag + '-print.txt', 'w')	
 
     if verbose:
         nRuns = np.prod([len(v) for v in params.values() if isinstance(v, list) ])
