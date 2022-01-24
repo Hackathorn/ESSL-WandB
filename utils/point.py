@@ -215,7 +215,7 @@ class VAE(nn.Module):
             #
             nn.ConvTranspose2d(32, num_channels, stride=2, kernel_size=3, padding=1),
             #
-            Trim(img_size, img_size),  # 3x129x129 -> 3x128x128
+            Trim(img_size, img_size),  # 3x129x129 -> 3x128x128  >>>> TODO Needed????  YES! WHY?
             nn.Sigmoid()
         )
 
@@ -246,7 +246,7 @@ def compute_epoch_loss_autoencoder(model, data_loader, loss_fn, device):
     with torch.no_grad():
         for features, _ in data_loader:
             features = features.to(device)
-            logits = model(features)
+            logits = model(features)[3]     # extract model forward.decoded from 4-tuple
             loss = loss_fn(logits, features, reduction='sum')
             num_examples += features.size(0)
             curr_loss += loss
@@ -257,36 +257,38 @@ def compute_epoch_loss_autoencoder(model, data_loader, loss_fn, device):
 # %% -------------------------------------------------------------------------------
 ################# train VAE model
 # derived from... RASBT-STAT453 Spring2021 L17 4_VAE_celeba-inspect-latent.ipynb
+import wandb
+def train_VAE(config, 
+              model, criterion, optimizer, 
+              train_loader, 
+              device, 
+            ):
 
-def train_VAE(      num_epochs, 
-                    model, optimizer, device, 
-                    train_loader,           
-                    loss_fn=None,           # assumes F.mse_loss
-                    logging_interval=100, 
-                    skip_epoch_stats=False,
-                    beta=1,
-                    save_model=None
-                ):
+    logging_interval = 1
+    skip_epoch_stats = False
+    example_ct = 0          # number of samples seen
+    
+    wandb.watch(model, criterion, log="all", log_freq=10)
     
     log_dict = {'train_combined_loss_per_batch': [],
                 'train_combined_loss_per_epoch': [],
                 'train_reconstruction_loss_per_batch': [],
                 'train_kl_loss_per_batch': []}
 
-    if loss_fn is None:
-        loss_fn = F.mse_loss
+    loss_fn = F.mse_loss    # set loss function >>>> TODO reconcil with W&B 'criterion'
 
     training_start = time.time()
 
-    for epoch in range(num_epochs):
+    for epoch in range(config.epochs):
         epoch_start = time.time()
 
         model.train()
         for batch_idx, (features, _) in enumerate(train_loader):
 
+            example_ct += len(features)
             features = features.to(device)
 
-            # forward and back prop
+            # forward proprogation
             encoded, z_mean, z_log_var, decoded = model(features)
 
             if features.shape != decoded.shape:
@@ -308,39 +310,41 @@ def train_VAE(      num_epochs,
             pixelwise = pixelwise.mean() # average over batch dimension
             
             # TODO https://medium.com/@chengjing/a-must-have-training-trick-for-vae-variational-autoencoder-d28ff53b0023# 
-            loss = pixelwise + (beta * kl_div)
+            loss = pixelwise + (config.beta * kl_div)
             
-            optimizer.zero_grad()
-            loss.backward()
+            # back-proprogation
+            optimizer.zero_grad()   # zero previous gradients 
+            loss.backward()         # calculate new ones
+            optimizer.step()        # step backward updating weights & biases
 
-            # UPDATE MODEL PARAMETERS
-            optimizer.step()
-
-            # LOGGING
+            # LOGGING BATCH
             log_dict['train_combined_loss_per_batch'].append(loss.item())
             log_dict['train_reconstruction_loss_per_batch'].append(pixelwise.item())
             log_dict['train_kl_loss_per_batch'].append(kl_div.item())
             
             if not batch_idx % logging_interval:
                 epoch_duration = time.time() - epoch_start
-                print('Epoch: %03d/%03d | Batch %04d/%04d | Loss: %4.4f | Duration: %.3f sec'
-                      % (epoch+1, num_epochs, batch_idx, len(train_loader), loss, epoch_duration)) 
+                print('    Epoch: %03d/%03d | Batch %04d/%04d | Loss: %4.4f | Duration: %.3f sec'
+                      % (epoch+1, config.epochs, batch_idx, len(train_loader), loss, epoch_duration)) 
 
-        if not skip_epoch_stats:
-            model.eval()
+    # LOGGING EPOCH
+        model.eval()
+        
+        with torch.set_grad_enabled(False):  # save memory during inference
             
-            with torch.set_grad_enabled(False):  # save memory during inference
-                
-                train_loss = compute_epoch_loss_autoencoder(
-                    model, train_loader, loss_fn, device)
-                log_dict['train_combined_per_epoch'].append(train_loss.item())
+            train_loss = compute_epoch_loss_autoencoder(
+                            model, train_loader, loss_fn, device)
+            log_dict['train_combined_loss_per_epoch'].append(train_loss.item())
+            wandb.log({'recon_loss': train_loss.item()})
 
-            epoch_duration = time.time() - epoch_start
-            print('***Epoch: %03d/%03d | Loss: %4.3f | Duration: %.3f sec' % (epoch+1, num_epochs, train_loss, epoch_duration))
+        epoch_duration = time.time() - epoch_start
+        wandb.log({"epoch": config.epochs, "loss": train_loss}, step=example_ct)
+        print('Epoch: %03d/%03d | Loss: %4.3f | Duration: %.3f sec' % 
+                (epoch+1, config.epochs, train_loss, epoch_duration))
             
     print('Training Time: %.1f min' % ((time.time() - training_start)/60))
-    if save_model is not None:
-        torch.save(model.state_dict(), save_model)
+    # if save_model is not None:
+    #     torch.save(model.state_dict(), save_model)
     
     return log_dict
 # %%

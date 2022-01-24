@@ -335,20 +335,26 @@ def create_samples_from_MNIST(ds_name, img_size, img_invert=True, verbose=True):
 
 # %%
 # Load random checkerboard dataset to create samples_df
-def create_samples_from_CHECKER(ds_name, img_size, n_classes=10, n_blk_size=2, img_invert=False, verbose=True):
+def create_samples_from_CHECKER(n_samples, 
+                                img_size, 
+                                n_classes=10, 
+                                n_blk_size=2, 
+                                noise=None,
+                                img_invert=False, 
+                                verbose=True,
+                            ):
     """create_samples from CHECKER dataset returning samples_df with image attributes
 
     Args:
-        dataset_name ([type]): [description]
+        n_samples ([type]): [description]
         img_size ([type]): [description]
         img_invert (bool, optional): [description]. Defaults to False since 
 
     Returns:
         [type]: [description]
     """
-    assert ds_name == 'CHECKER', "should be CHECKER dataset"
     
-    X, y = make_checker_images(3000, n_classes, n_img_size=img_size, n_blk_size=n_blk_size)
+    X, y = make_checker_images(n_samples, n_classes, n_img_size=img_size, n_blk_size=n_blk_size)
     
     label_to_labstr = [f'pat{k:02d}' for k in range(n_classes)]
     flags = ''
@@ -389,7 +395,7 @@ def create_samples_from_CHECKER(ds_name, img_size, n_classes=10, n_blk_size=2, i
         img_labstr = label_to_labstr[int(img_label)]
 
         # save image attributes into samples_df
-        sample_list.append([id, ds_name, flags, img_size, img_size, img_bbox, 'L', [img_out], img_label, img_labstr])
+        sample_list.append([id, 'CHECKER', flags, img_size, img_size, img_bbox, 'L', [img_out], img_label, img_labstr])
         
     # create dataframe for samples
     samples_df = pd.DataFrame(sample_list, columns=['id', 'ds_name', 'flags', 'img_width', 'img_height', 
